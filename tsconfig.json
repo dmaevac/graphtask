@@ -8,7 +8,7 @@
     "declaration": true,
     "moduleResolution": "Node",
     "forceConsistentCasingInFileNames": true,
-    "outDir": "./lib/esm",
+    "outDir": "./lib/esm"
   },
   "include": [
     "./src"

@@ -1,4 +1,4 @@
-import Comparator from "../utils/Comparator";
+import Comparator from '../utils/Comparator';
 
 class LinkedListNode<T> {
   value: T;
@@ -10,12 +10,12 @@ class LinkedListNode<T> {
     this.next = next;
   }
 
-  toString(callback: Function) {
-    return callback ? callback(this.value) : `${this.value}`;
+  toString(): string {
+    return `${this.value}`;
   }
 }
 
-export default class LinkedList<T = any> {
+export default class LinkedList<T = any> implements Iterable<T> {
   head?: LinkedListNode<T>;
 
   tail?: LinkedListNode<T>;
@@ -26,7 +26,25 @@ export default class LinkedList<T = any> {
     this.compare = new Comparator(comparatorFunction);
   }
 
-  prepend(value: T) {
+  [Symbol.iterator](): Iterator<T> {
+    let currentNode = this.head;
+
+    return {
+      next: (): IteratorResult<T> => {
+        const node = currentNode;
+        if (!node) {
+          return { done: true, value: node }
+        }
+        currentNode = node?.next;
+        return {
+          done: false,
+          value: node.value
+        }
+      },
+    };
+  }
+
+  prepend(value: T): LinkedList<T> {
     const newNode = new LinkedListNode<T>(value, this.head);
     this.head = newNode;
 
@@ -38,7 +56,7 @@ export default class LinkedList<T = any> {
     return this;
   }
 
-  append(value: T) {
+  append(value: T): LinkedList<T> {
     const newNode = new LinkedListNode<T>(value);
 
     if (!this.head) {
@@ -54,7 +72,7 @@ export default class LinkedList<T = any> {
     return this;
   }
 
-  delete(value: T) {
+  delete(value: T): LinkedListNode<T> | null {
     if (!this.head) {
       return null;
     }
@@ -90,31 +108,7 @@ export default class LinkedList<T = any> {
     return deletedNode;
   }
 
-  find({ value = undefined, callback = undefined }: { value?: T; callback?: (val: T) => boolean; }) {
-    if (!this.head) {
-      return null;
-    }
-
-    let currentNode: LinkedListNode<T> | undefined = this.head;
-
-    while (currentNode) {
-      // If callback is specified then try to find node by callback.
-      if (callback && callback(currentNode.value)) {
-        return currentNode;
-      }
-
-      // If value is specified then try to compare by value..
-      if (value !== undefined && this.compare.equal(currentNode.value, value)) {
-        return currentNode;
-      }
-
-      currentNode = currentNode.next;
-    }
-
-    return null;
-  }
-
-  deleteTail() {
+  deleteTail(): LinkedListNode<T> | undefined {
     const deletedTail = this.tail;
 
     if (this.head === this.tail) {
@@ -142,7 +136,7 @@ export default class LinkedList<T = any> {
     return deletedTail;
   }
 
-  deleteHead() {
+  deleteHead(): LinkedListNode<T> | undefined {
     if (!this.head) {
       return;
     }
@@ -159,39 +153,17 @@ export default class LinkedList<T = any> {
     return deletedHead;
   }
 
-  /**
-   * @param {*[]} values - Array of values that need to be converted to linked list.
-   * @return {LinkedList}
-   */
-  fromArray(values: T[]): LinkedList<T> {
-    values.forEach((value) => this.append(value));
+  static fromArray<T>(values: T[]): LinkedList<T> {
+    const list = new LinkedList<T>();
+    values.forEach((value) => list.append(value));
 
-    return this;
+    return list;
   }
 
-  /**
-   * @return {LinkedListNode[]}
-   */
-  toArray(): LinkedListNode<T>[] {
-    const nodes = [];
+  // toString(): string {
+  //   return [...this.getNodes()].map((node) => node.toString()).toString();
+  // }
 
-    let currentNode = this.head;
-    while (currentNode) {
-      nodes.push(currentNode);
-      currentNode = currentNode.next;
-    }
-
-    return nodes;
-  }
-
-  toString(callback: Function) {
-    return this.toArray().map((node) => node.toString(callback)).toString();
-  }
-
-  /**
-   * Reverse a linked list.
-   * @returns {LinkedList}
-   */
   reverse(): LinkedList<T> {
     let currNode = this.head;
     let prevNode = undefined;

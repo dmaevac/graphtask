@@ -1,115 +1,125 @@
 import Piscina from 'piscina';
-import { Suite } from './Suite';
+import Suite from './Suite';
 import Node from './Node';
-
-type TaskResult = any;
-
-type TaskInput = {
-  parents: TaskResult[];
-  params: Record<string, any>;
-  global: Record<string, any>;
-};
+import TaskStateStore, { isEndStatus, isFailedStatus } from './TaskStateStore';
+import { IRenderer, TaskInput, TaskResult } from './types';
+import { Iterator } from './utils/Iterable';
 
 const wait = async (timeout = 1000) =>
   new Promise((res) => {
     setTimeout(res, timeout);
   });
 
-export class SuiteRunner {
-  suite: Suite;
+export default class SuiteRunner {
+  private suite: Suite;
+  private state: TaskStateStore;
+  private pool: Piscina;
+  private renderer: IRenderer<any> | undefined;
 
-  state: Map<any, { input: TaskInput; output?: TaskResult; metrics: { elapsed: number } }>;
-
-  pool: Piscina;
-
-  private globalData: any;
-
-  constructor(suite: Suite) {
+  constructor(suite: Suite, renderer?: IRenderer) {
     this.suite = suite;
-    this.state = new Map();
-
+    this.renderer = renderer;
+    this.state = new TaskStateStore(this.stateChange.bind(this));
     this.pool = new Piscina({
-      filename: suite.testFilePath,
+      filename: suite.actionsFilePath,
     });
+
+    const keys = [...this.suite.getAllNodeKeys()];
+    if (!keys || !keys.length) throw new Error('Keys list must be specified');
+    keys.forEach((k) => this.state.set(k, 'pending'));
   }
 
-  async itemDone({ name, key, state }: Node): Promise<void> {
-    if (state === 'aborted' || state === 'failed') {
-      console.error(`${name}: ${this.suite.getNodeState(key)} - ${JSON.stringify(this.state.get(key), null, 2)}`);
-    }
+  private stateChange(key: string) {
+    this.renderer?.onStateChange(key, this.suite.getGraph(), this.getState());
+  }
+
+  getState(): Readonly<TaskStateStore> {
+    return Object.freeze(this.state);
   }
 
   async processItem(item: Node): Promise<void> {
-    this.suite.setNodeState(item.key, 'started');
-    const parents = this.suite.getParentNodes(item.key);
-    const allFailedParents = parents.length > 0 && parents.every((p) => p.state === 'failed' || p.state === 'aborted');
+    this.state.set(item.key, 'started');
 
-    const input: TaskInput = {
-      parents: parents
-        .reduce((acc, p) => {
-          const data = this.state.get(p.key);
+    const parentFailedStates = Iterator.map(
+      ({ key }) => {
+        const s = this.state.getState(key);
+        if (!s) throw new Error(`No state found for key '${key}'`);
+        return isFailedStatus(s.status) ? 1 : 0;
+      },
+      this.suite.getParentNodes(item.key),
+    );
 
-          return [...acc, { ...p, output: data?.output }];
-        }, [] as TaskResult[])
-        .filter(Boolean),
+    const allParentsFailed = Math.min(...parentFailedStates) === 1;
+
+    const items = Iterator.map(
+      ({ label = '', node }) => [label, this.state.getState(node.key)?.output] as [string, TaskResult],
+      Iterator.filter(({ node }) => !!this.state.getState(node.key), this.suite.getParentsAndEdges(item.key)),
+    );
+
+    const taskInput: TaskInput = {
+      input: item.config.labeledInputs ? Object.fromEntries(items) : Array.from(Iterator.map(([, tr]) => tr, items)),
       params: item.params,
-      global: this.globalData,
     };
 
-    const ts = Date.now();
-    let output: TaskResult = {};
     try {
-      if (!allFailedParents) {
-        output = await this.pool.run({ ...input }, { name: item.actionName });
-        this.suite.setNodeState(item.key, 'succeeded');
+      if (!allParentsFailed) {
+        const output: TaskResult = await this.pool.run(taskInput, { name: item.actionName });
+        this.state.set(item.key, 'succeeded', output);
       } else {
-        this.suite.setNodeState(item.key, 'aborted');
+        this.state.set(item.key, 'aborted');
       }
     } catch (e: any) {
-      output = { error: e?.stack };
-      this.suite.setNodeState(item.key, 'failed');
-    } finally {
-      this.state.set(item.key, { input, output, metrics: { elapsed: Date.now() - ts } });
-      this.itemDone(item);
+      const err = e.stack?.toString() || e.message || 'Unknown Error';
+      this.state.set(item.key, 'failed', { error: err });
     }
   }
 
-  private async _loop(opts: { dryrun?: boolean }) {
-    const nodes = this.suite.getTopoSorted();
+  hasPendingOrStarted(): boolean {
+    const allNodeStatuses = this.state.getAllStatuses();
+    return allNodeStatuses.includes('pending') || allNodeStatuses.includes('started');
+  }
 
-    const canProcess = (item: Node) => {
-      const nodes = this.suite.getParentNodes(item.key);
-      const alldepsDone = nodes.every((node) => node.state && node.state !== 'pending' && node.state !== 'started');
-      return item.state === 'pending' && alldepsDone;
+  private async _loop(opts: { dryrun?: boolean }) {
+    const canProcess = (node: Node): boolean => {
+      const statuses = Iterator.map((p) => {
+        const s = this.state.getState(p.key);
+        if (!s) throw new Error(`No state for key '${p.key}'`);
+        return isEndStatus(s.status);
+      }, this.suite.getParentNodes(node.key));
+
+      const alldepsDone = Array.from(statuses).every(x => x !== false)
+      const item = this.state.getState(node.key);
+
+      return !!(item && item.status === 'pending' && alldepsDone);
     };
 
-    nodes.filter(canProcess).forEach((node) => {
+    for (const node of Iterator.filter(canProcess, this.suite.getTopoSorted().toList())) {
       this.processItem(node);
-    });
+    }
 
-    await wait(50);
+    await wait(10);
 
-    if (this.suite.hasPendingOrStarted()) {
+    if (this.hasPendingOrStarted()) {
       await this._loop(opts);
     }
   }
 
-  async run(initialData = {}): Promise<string> {
-    await this.suite.validate();
-
-    this.globalData = { ...initialData };
+  async run(): Promise<Readonly<TaskStateStore>> {
+    this.suite.validate();
     await this._loop({ dryrun: false });
-
-    const dotGraph = this.suite.renderDot();
-
-    return dotGraph;
+    return Object.freeze(this.state);
   }
 
-  async plan(): Promise<string> {
-    await this.suite.validate();
-
-    const dotGraph = this.suite.renderDot();
-
-    return dotGraph;
+  abort(): void {
+    const allPendingKeys = this.state.getAllKeysByState({ state: 'pending' });
+    allPendingKeys.forEach((key) => this.state.set(key, 'aborted'));
   }
+
+  // async plan(): Promise<string> {
+  //   this.suite.validate();
+
+  //   const dotGraph = this.suite.renderDot();
+
+  //   return dotGraph;
+  // }
 }

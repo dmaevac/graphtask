@@ -1,5 +1,5 @@
 {
-  "name": "graphtape",
+  "name": "graphtask",
   "main": "lib/cjs/index.js",
   "module": "lib/esm/index.js",
   "type": "commonjs",
@@ -9,25 +9,36 @@
   "scripts": {
     "prepublish": "npm run build",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig-cjs.json",
-    "watch:cjs": "tsc -p tsconfig-cjs.json --watch",
+    "watch": "tsc -p tsconfig-cjs.json --watch & tsc -p tsconfig.json --watch",
     "test": "cd test && npm run test"
+  },
+  "bin": {
+    "graphtask": "./lib/cjs/cli/index.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^8.3.0",
     "piscina": "^3.1.0",
-    "tape": "^5.3.1"
+    "terminal-kit": "^2.2.3"
   },
   "devDependencies": {
+    "@types/commander": "^2.12.2",
     "@types/node": "^16.7.10",
+    "@types/tape": "^4.13.2",
+    "@types/terminal-kit": "^1.28.4",
     "@typescript-eslint/eslint-plugin": "^4.30.0",
     "@typescript-eslint/eslint-plugin-tslint": "^4.31.0",
     "@typescript-eslint/parser": "^4.30.0",
     "eslint": "^7.32.0",
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.24.2",
+    "faucet": "0.0.1",
+    "nodemon": "^2.0.15",
     "prettier": "^2.4.0",
-    "ts-node": "^10.2.1",
+    "tape": "^5.3.2",
+    "ts-node": "^10.4.0",
     "typescript": "^4.4.2"
   }
 }

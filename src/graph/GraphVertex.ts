@@ -1,4 +1,5 @@
 import LinkedList from '../lists/LinkedList';
+import { Iterator } from '../utils/Iterable';
 import GraphEdge from './GraphEdge';
 
 export default class GraphVertex<T extends Record<string, any> = any> {
@@ -8,7 +9,7 @@ export default class GraphVertex<T extends Record<string, any> = any> {
 
   edges: LinkedList<GraphEdge<T>>;
 
-  constructor(value: T, keyField: string = 'key') {
+  constructor(value: T, keyField = 'key') {
     if (value === undefined) {
       throw new Error('Graph vertex must have a value');
     }
@@ -24,59 +25,46 @@ export default class GraphVertex<T extends Record<string, any> = any> {
     return this;
   }
 
-  deleteEdge(edge: GraphEdge<T>) {
+  deleteEdge(edge: GraphEdge<T>): void {
     this.edges.delete(edge);
   }
 
-  getNeighbors(): GraphVertex<T>[] {
-    return this.edges.toArray().map((node) => (node.value.startVertex === this
-      ? node.value.endVertex
-      : node.value.startVertex));
+  *getNeighbors(): Generator<GraphVertex<T>> {
+    for (const edge of this.edges) {
+      const {
+        startVertex, endVertex,
+      } = edge;
+      yield startVertex === this ? endVertex : startVertex;
+    }
   }
 
-  getEdges(): GraphEdge<T>[] {
-    return this.edges.toArray().map((linkedListNode) => linkedListNode.value);
-  }
-
-  getDegree(): number {
-    return this.edges.toArray().length;
+  *getEdges(): Generator<GraphEdge<T>> {
+    for (const edge of this.edges) {
+      yield edge;
+    }
   }
 
   hasEdge(requiredEdge: GraphEdge<T>): boolean {
-    const edgeNode = this.edges.find({
-      callback: (edge) => edge === requiredEdge,
-    });
-
-    return !!edgeNode;
+    for(const edge of this.edges) {
+      if (edge === requiredEdge) return true;
+    }
+    return false;
   }
 
   hasNeighbor(vertex: GraphVertex<T>): boolean {
-    const vertexNode = this.edges.find({
-      callback: (edge) => edge.startVertex === vertex || edge.endVertex === vertex,
-    });
-
-    return !!vertexNode;
+    for(const edge of this.edges) {
+      if (edge.startVertex === vertex || edge.endVertex === vertex) return true;
+    }
+    return false;
   }
 
-  findEdge(vertex: GraphVertex<T>) {
-    const edge = this.edges.find({
-      callback: (edge) => edge.startVertex === vertex || edge.endVertex === vertex
-    });
-
-    return edge?.value;
+  findEdge(vertex: GraphVertex<T>): GraphEdge<T> | undefined {
+    for(const edge of this.edges) {
+      if (edge.startVertex === vertex || edge.endVertex === vertex) return edge;
+    }
   }
 
   getKey(): string {
     return this.value[this.keyField];
-  }
-
-  deleteAllEdges(): GraphVertex<T> {
-    this.getEdges().forEach((edge) => this.deleteEdge(edge));
-
-    return this;
-  }
-
-  toString(callback: Function): string {
-    return callback ? callback(this.value) : `${this.value}`;
   }
 }

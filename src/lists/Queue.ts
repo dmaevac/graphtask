@@ -15,7 +15,7 @@ export default class Queue<T = any> {
      return this.linkedList.head?.value || null;
   }
 
-  enqueue(value: T) {
+  enqueue(value: T): void {
     this.linkedList.append(value);
   }
 
@@ -24,7 +24,7 @@ export default class Queue<T = any> {
     return removedHead?.value || null;
   }
 
-  toString(callback: Function): string {
-    return this.linkedList.toString(callback);
+  toString(): string {
+    return this.linkedList.toString();
   }
 }

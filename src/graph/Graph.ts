@@ -1,80 +1,79 @@
+import { Iterator } from '../utils/Iterable';
 import GraphEdge from './GraphEdge';
 import GraphVertex from './GraphVertex';
 
 export default class Graph<T = any> {
-  vertices: Record<string, GraphVertex<T>>;
+  private vertices: Map<string, GraphVertex<T>>;
 
-  edges: Record<string, GraphEdge<T>>;
+  private edges: Map<string, GraphEdge<T>>;
 
   constructor() {
-    this.vertices = {};
-    this.edges = {};
+    this.vertices = new Map();
+    this.edges = new Map();
   }
 
   addVertex(newVertex: GraphVertex<T>): Graph {
-    this.vertices[newVertex.getKey()] = newVertex;
+    const key = newVertex.getKey();
+    if (this.vertices.has(key)) {
+      throw new Error(`Graph already contains vertex with key '${key}'`);
+    }
+    this.vertices.set(key, newVertex);
 
     return this;
   }
 
-  getVertexByKey(vertexKey: string) {
-    return this.vertices[vertexKey];
+  getVertexByKey(vertexKey: string): GraphVertex<T> | undefined {
+    return this.vertices.get(vertexKey);
   }
 
-
-  // eslint-disable-next-line class-methods-use-this
-  getNeighbors(vertex: GraphVertex<T>): GraphVertex<T>[] {
-    return vertex.getNeighbors();
+  getAllVertices(): IterableIterator<GraphVertex<T>> {
+    return this.vertices.values();
   }
 
-  getAllVertices(): GraphVertex<T>[] {
-    return Object.values(this.vertices);
+  getAllEdges(): IterableIterator<GraphEdge<T>> {
+    return this.edges.values();
   }
 
-
-  getAllEdges(): GraphEdge<T>[] {
-    return Object.values(this.edges);
-  }
-
-  getEdgesByEndVertex(key: string): GraphEdge<T>[] {
-    return this.getAllEdges().filter(e => e.endVertex.getKey() === key);
+  getEdgesByEndVertex(key: string): Generator<GraphEdge<T>> {
+    return Iterator.filter((edge) => edge.endVertex.getKey() === key, this.getAllEdges());
   }
 
   addEdge(edge: GraphEdge<T>): Graph<T> {
     // // Try to find and end start vertices.
     let startVertex = this.getVertexByKey(edge.startVertex.getKey());
-    // let endVertex = this.getVertexByKey(edge.endVertex.getKey());
+    let endVertex = this.getVertexByKey(edge.endVertex.getKey());
 
-    // // Insert start vertex if it wasn't inserted.
-    // if (!startVertex) {
-    //   this.addVertex(edge.startVertex);
-    //   startVertex = this.getVertexByKey(edge.startVertex.getKey());
-    // }
-
-    // // Insert end vertex if it wasn't inserted.
-    // if (!endVertex) {
-    //   this.addVertex(edge.endVertex);
-    //   endVertex = this.getVertexByKey(edge.endVertex.getKey());
-    // }
-
-    // Check if edge has been already added.
-    if (this.edges[edge.getKey()]) {
-      throw new Error('Edge has already been added');
-    } else {
-      this.edges[edge.getKey()] = edge;
+    if (!startVertex) {
+      this.addVertex(edge.startVertex);
+      startVertex = this.getVertexByKey(edge.startVertex.getKey());
     }
 
-    // If graph IS directed then add the edge only to start vertex.
+    if (!endVertex) {
+      this.addVertex(edge.endVertex);
+      endVertex = this.getVertexByKey(edge.endVertex.getKey());
+    }
+
+    if (!startVertex) {
+      throw new Error(`Unable to find or add start vertex for edge '${edge.getKey()}'`);
+    }
+
+    // Check if edge has been already added.
+    if (this.edges.has(edge.getKey())) {
+      throw new Error('Edge has already been added');
+    } else {
+      this.edges.set(edge.getKey(), edge);
+    }
+
+    // As this is a directed then add the edge only to start vertex.
     startVertex.addEdge(edge);
 
     return this;
   }
 
-
-  deleteEdge(edge: GraphEdge<T>) {
+  deleteEdge(edge: GraphEdge<T>): void {
     // Delete edge from the list of edges.
-    if (this.edges[edge.getKey()]) {
-      delete this.edges[edge.getKey()];
+    if (this.edges.has(edge.getKey())) {
+      this.edges.delete(edge.getKey());
     } else {
       throw new Error('Edge not found in graph');
     }
@@ -83,79 +82,41 @@ export default class Graph<T = any> {
     const startVertex = this.getVertexByKey(edge.startVertex.getKey());
     const endVertex = this.getVertexByKey(edge.endVertex.getKey());
 
-    startVertex.deleteEdge(edge);
-    endVertex.deleteEdge(edge);
+    startVertex?.deleteEdge(edge);
+    endVertex?.deleteEdge(edge);
   }
 
+  findEdge(startVertex: GraphVertex<T>, endVertex: GraphVertex<T>): GraphEdge<T> | undefined {
+    const start = this.getVertexByKey(startVertex.getKey());
 
-  findEdge(startVertex: GraphVertex<T>, endVertex: GraphVertex<T>) {
-    const vertex = this.getVertexByKey(startVertex.getKey());
-
-    if (!vertex) {
-      return;
-    }
-
-    return vertex.findEdge(endVertex);
+    return start ? start.findEdge(endVertex) : undefined;
   }
 
   getWeight(): number {
-    return this.getAllEdges().reduce((weight, graphEdge) => weight + graphEdge.weight, 0);
+    return [...this.getAllEdges()].reduce((weight, graphEdge) => weight + graphEdge.weight, 0);
   }
 
+  // reverse(): Graph<T> {
+  //   for (const edge of this.getAllEdges()) {
+  //     // Delete straight edge from graph and from vertices.
+  //     this.deleteEdge(edge);
 
-  reverse(): Graph<T> {
-    this.getAllEdges().forEach((edge) => {
-      // Delete straight edge from graph and from vertices.
-      this.deleteEdge(edge);
+  //     // Reverse the edge.
+  //     edge.reverse();
 
-      // Reverse the edge.
-      edge.reverse();
+  //     // Add reversed edge back to the graph and its vertices.
+  //     this.addEdge(edge);
+  //   }
 
-      // Add reversed edge back to the graph and its vertices.
-      this.addEdge(edge);
-    });
+  //   return this;
+  // }
 
-    return this;
-  }
-
-  getVerticesIndices(): Record<string, number> {
-    const verticesIndices: Record<string, number> = {};
-    this.getAllVertices().forEach((vertex, index) => {
-      verticesIndices[vertex.getKey()] = index;
-    });
-
-    return verticesIndices;
-  }
-
-  getAdjacencyMatrix(): number[][] {
-    const vertices = this.getAllVertices();
-    const verticesIndices = this.getVerticesIndices();
-
-    // Init matrix with infinities meaning that there is no ways of
-    // getting from one vertex to another yet.
-    const adjacencyMatrix: number[][] = Array(vertices.length)
-      .fill(null)
-      .map(() => Array(vertices.length).fill(Infinity));
-
-    // Fill the columns.
-    vertices.forEach((vertex, vertexIndex) => {
-      vertex.getNeighbors().forEach((neighbor) => {
-        const neighborIndex = verticesIndices[neighbor.getKey()];
-        const weight = this.findEdge(vertex, neighbor)?.weight || 0
-
-        adjacencyMatrix[vertexIndex][neighborIndex] = weight;
-      });
-    });
-
-    return adjacencyMatrix;
+  getVerticesIndices(): Map<string, number> {
+    const pairs = Iterator.map((x, idx) => [x.getKey(), idx] as [string, number], this.getAllVertices())
+    return new Map(pairs);
   }
 
   toString(): string {
-    return Object.keys(this.vertices).toString();
-  }
-
-  updateVertexValue(key: string, data: any) {
-    // TODO: dont like this
-    Object.assign(this.vertices[key].value, data);
+    return Array.from(this.vertices.keys()).toString();
   }
 }

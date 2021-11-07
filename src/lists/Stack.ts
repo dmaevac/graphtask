@@ -1,12 +1,10 @@
+// import { Iterator } from '../utils/Iterable';
 import LinkedList from './LinkedList';
 
 export default class Stack<T = any> {
   linkedList: LinkedList<T>;
 
   constructor() {
-    // We're going to implement Stack based on LinkedList since these
-    // structures are quite similar. Compare push/pop operations of the Stack
-    // with prepend/deleteHead operations of LinkedList.
     this.linkedList = new LinkedList<T>();
   }
 
@@ -15,7 +13,7 @@ export default class Stack<T = any> {
     return !this.linkedList.head;
   }
 
-  peek() {
+  peek(): T | undefined {
     if (this.isEmpty()) {
       // If the linked list is empty then there is nothing to peek from.
       return;
@@ -25,26 +23,26 @@ export default class Stack<T = any> {
     return this.linkedList.head?.value;
   }
 
-  push(value: T) {
+  push(value: T): void {
     // Pushing means to lay the value on top of the stack. Therefore let's just add
     // the new value at the start of the linked list.
     this.linkedList.prepend(value);
   }
 
-  pop() {
+  pop(): T | undefined {
     // Let's try to delete the first node (the head) from the linked list.
     // If there is no head (the linked list is empty) just return null.
     const removedHead = this.linkedList.deleteHead();
     return removedHead?.value;
   }
 
-  toArray(): T[] {
-    return this.linkedList
-      .toArray()
-      .map((linkedListNode) => linkedListNode.value);
+  *toList(): Generator<T> {
+    for (const x of this.linkedList) {
+      yield x
+    }
   }
 
-  toString(callback: Function): string {
-    return this.linkedList.toString(callback);
+  toString(): string {
+    return this.linkedList.toString();
   }
 }

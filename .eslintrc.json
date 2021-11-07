@@ -16,6 +16,9 @@
         "@typescript-eslint"
     ],
     "rules": {
-      "max-len": ["error", { "code": 120 }]
+      "max-len": ["error", { "code": 120 }],
+      "no-console": "warn",
+      "@typescript-eslint/no-var-requires": 0,
+      "@typescript-eslint/no-explicit-any": 0
     }
 }

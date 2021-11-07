@@ -1,11 +1,12 @@
-/* eslint-disable no-dupe-class-members */
-/* eslint-disable max-classes-per-file */
-import fs from 'fs/promises';
+import fs from 'fs';
 import Graph from './graph/Graph';
 import GraphEdge from './graph/GraphEdge';
 import GraphVertex from './graph/GraphVertex';
-import Node, { NodeState } from './Node';
-import { topologicalSort } from './utils/graph';
+import Stack from './lists/Stack';
+import Node from './Node';
+import { TaskInput } from './types';
+import { topo } from './utils/graph';
+import { Iterator } from './utils/Iterable';
 
 const createIdGen = (prefix = 'n') => {
   let id = 0;
@@ -13,111 +14,126 @@ const createIdGen = (prefix = 'n') => {
   return () => `${prefix}${(id++).toString()}`;
 };
 
-export class Suite {
-  graph: Graph<Node>;
+export default class Suite {
+  private graph: Graph<Node>;
 
-  id: (x: { name: string, params: any }) => string;
-  testFilePath: string;
+  id: (x: { name: string; params: any }) => string;
+  flowFilePath: string;
+  actionsFilePath: string;
+  actionsModule: any;
 
-  constructor(testFilePath: string) {
+  constructor(flowFilePath: string, actionsFilePath: string) {
     this.graph = new Graph<Node>();
     this.id = createIdGen();
-    this.testFilePath = testFilePath;
+    this.flowFilePath = flowFilePath;
+    this.actionsFilePath = actionsFilePath;
+    const stat = fs.statSync(actionsFilePath);
+    if (!stat) throw new Error(`actions file not found ${actionsFilePath}`);
+    this.actionsModule = require(actionsFilePath);
   }
 
-  static async create(testFilePath: string, fn: (_: { add: Suite['add'] }) => Promise<void>): Promise<Suite> {
-    const suite = new Suite(testFilePath);
-    await fn({ add: suite.add.bind(suite) });
-    return suite;
-  }
-
-  add({
+  task({
     name,
     action,
     params,
-    parents = [],
+    input = [],
   }: {
     name: string;
-    action: Function;
+    action: (input: TaskInput) => Promise<any> | string;
     params?: any;
-    parents?: Node[];
+    input?: Node[] | Record<string, Node>;
   }): Node {
     if (typeof name !== 'string') throw new Error('Missing name arg');
-    if (typeof action !== 'function') throw new Error('Missing action arg');
+    if (typeof action !== 'function' && typeof action !== 'string')
+      throw new Error(`Missing action for '${name}', argument must be a string or a function reference`);
+    if (input && typeof input !== 'object') throw new Error('input must be an array or hash of tasks');
+
+    const actionName = typeof action === 'string' ? action : action.name;
+
+    if (!actionName) {
+      throw new Error(`Actions must be named functions: the action for '${name}' is not a named function.'`);
+    }
+
+    if (!this.actionsModule[actionName]) {
+      throw new Error(`Actions '${actionName}' not found in actions file.`);
+    }
+
+    const labeledInputs = !Array.isArray(input);
+
+    // TODO: Refactor this
+    const edgesData: [string | undefined, Node][] = !labeledInputs
+      ? input.map((start) => {
+          this.validateInputArg(start);
+          return [undefined, start];
+        })
+      : Object.entries(input).map(([label, start]) => {
+          this.validateInputArg(start);
+          return [label, start];
+        });
 
     const key = this.id({ name, params });
-    const actionName = action.name;
-
-    if (!actionName)
-      throw new Error(`Actions must be named functions: the action for '${name}' is not a named function.'`);
-
-    const node = new Node(key, name, actionName, params, 'pending');
-
+    const node = new Node(key, name, actionName, params, { labeledInputs });
     const newVertex = new GraphVertex(node);
+
     this.graph.addVertex(newVertex);
 
-    parents.forEach((dep) => {
-      if (dep instanceof Node) {
-        const parent = this.graph.getVertexByKey(dep.key);
-        this.graph.addEdge(new GraphEdge<Node>(parent, newVertex));
-      } else {
-        throw new Error(`Parent is not a node: ${dep}`)
-      }
+    edgesData.forEach(([label, start]) => {
+      const startVertex = this.graph.getVertexByKey(start.key);
+      if (startVertex) this.graph.addEdge(new GraphEdge<Node>(startVertex, newVertex, label));
     });
 
     return node;
   }
 
-  async validate(): Promise<void> {
-    await fs.stat(this.testFilePath);
-    const actionsModule = require(this.testFilePath);
-    const missingActions = this.graph.getAllVertices().reduce((acc, { value: { actionName } }) => {
-      if (typeof actionsModule[actionName] !== 'function') acc.push(actionName);
-      return acc;
-    }, [] as string[]);
+  private validateInputArg(start: Node) {
+    if (!(start instanceof Node)) throw new Error(`Input is not a task: ${start}`);
+    if (!this.graph.getVertexByKey(start.key)) throw new Error(`Input is not a task of this graph: ${start}`);
+  }
+
+  validate(): void {
+    const missingActions = Array.from(
+      Iterator.map(
+        ({ value: { actionName } }) => actionName,
+        Iterator.filter(
+          ({ value: { actionName } }) => typeof this.actionsModule[actionName] !== 'function',
+          this.graph.getAllVertices(),
+        ),
+      ),
+    );
 
     if (missingActions.length) {
-      throw new Error(`The following action functions are missing from ${this.testFilePath}: ${missingActions.join()}`);
+      throw new Error(`The following action functions are missing from actions file: ${missingActions.join()}`);
     }
   }
 
-  getNode(key: string): Node | null {
+  getGraph(): Readonly<Graph<Node>> {
+    return Object.freeze(this.graph);
+  }
+
+  getNode(key: string): Node | undefined {
     return this.graph.getVertexByKey(key)?.value;
   }
 
-  setNodeState(key: string, state: NodeState) {
-    this.graph.updateVertexValue(key, { state });
+  getAllNodeKeys(): Generator<string> {
+    return Iterator.map((v) => v.getKey(), this.graph.getAllVertices());
   }
 
-  getNodeState(key: string) {
-    return this.getNode(key)?.state;
+  getParentsAndEdges(key: string): Generator<{ node: Readonly<Node>; label?: string }> {
+    return Iterator.map(
+      ({ label, startVertex }) => ({ label, node: startVertex.value }),
+      this.graph.getEdgesByEndVertex(key),
+    );
   }
 
-  hasPendingOrStarted() {
-    const allNodeStates = this.graph.getAllVertices().map((v) => v.value.state);
-    return allNodeStates.includes('pending') || allNodeStates.includes('started');
+  getParentNodes(key: string): Generator<Node> {
+    return Iterator.map((e) => e.startVertex.value, this.graph.getEdgesByEndVertex(key));
   }
 
-  getParentNodes(key: string) {
-    return this.graph.getEdgesByEndVertex(key).map(e => e.startVertex.value);
-  }
-
-  getTopoSorted() {
-    const ready = topologicalSort(this.graph);
-
-    return ready.map((s) => s.value);
-  }
-
-  renderDot() {
-    const buildAttrs = (n: Node) => {
-      const col = n.state === 'aborted' ? 'red' : (n.state === 'failed' ? 'yellow' : 'green');
-      return `label="${n.name}" color="${col}"`
+  getTopoSorted(): Stack<Node> {
+    const stack = new Stack<Node>();
+    for (const s of topo(this.graph)) {
+      stack.push(s);
     }
-
-    return `digraph g {
-      ${this.graph.getAllVertices().map(v => `${v.getKey()} [${buildAttrs(v.value)}];`).join(' ')}
-
-      ${this.graph.getAllEdges().map(e => `${e.startVertex.getKey()} -> ${e.endVertex.getKey()};`).join(' ')}
-    }`
+    return stack;
   }
 }
