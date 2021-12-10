@@ -7,7 +7,7 @@ import { Iterator } from '../utils/Iterable';
 
 const buildAttrs = (node: Node, state: TaskStatus, output: TaskResult) => {
   const col = stateColor[state];
-  return { label: node.name, color: col, tooltip: state === 'failed' ? output.error : null };
+  return { label: node.name, color: col, tooltip: state === 'failed' ? JSON.stringify(output.error) : null };
 };
 
 const objectToAttrString = (o: Record<string, number | string | null>) =>
@@ -23,7 +23,7 @@ export default class DotReporter implements IReporter<Node> {
     return this.filePath;
   }
 
-  async report(graph: Graph<Node>, state: Readonly<TaskStateStore>): Promise<string> {
+  async report(graph: Readonly<Graph<Node>>, state: Readonly<TaskStateStore>): Promise<string> {
     const verts = Iterator.map((v) => {
       const item = state.getState(v.getKey());
 
@@ -39,6 +39,8 @@ export default class DotReporter implements IReporter<Node> {
 
     const dot = `
     digraph g {
+      fontname="sans-serif"
+
       ${[...verts].join(' ')}
 
       ${[...edges].join(' ')}

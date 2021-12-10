@@ -1,4 +1,3 @@
-const assert = require('assert');
 const { wait } = require('../utils');
 
 module.exports = {

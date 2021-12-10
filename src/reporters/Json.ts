@@ -11,7 +11,7 @@ export default class JsonReporter implements IReporter<Node> {
     return this.filePath;
   }
 
-  async report(graph: Graph<Node>, state: Readonly<TaskStateStore>): Promise<string> {
+  async report(graph: Readonly<Graph<Node>>, state: Readonly<TaskStateStore>): Promise<string> {
     const pairs = Iterator.map(
       v => {
         const key = v.getKey();

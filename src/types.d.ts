@@ -19,5 +19,5 @@ export interface IReporter<T = any> {
   getOutputFilePath(): string;
 }
 
-export type RunOptions = { output?: string; renderer?: 'log' | 'taskprogress'; plan: boolean };
+export type RunOptions = { output: string; renderer?: 'log' | 'taskprogress'; plan: boolean };
 

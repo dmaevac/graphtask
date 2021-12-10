@@ -2,7 +2,7 @@ import { TaskResult } from './types';
 
 export type TaskStatus = 'pending' | 'started' | 'failed' | 'aborted' | 'succeeded';
 type Metrics = { elapsed?: number; start: number; end?: number };
-type State = { status: TaskStatus; output?: TaskResult };
+type State = { status: TaskStatus; output?: TaskResult, change: number };
 
 export const isEndStatus = (s: TaskStatus): boolean => s === 'failed' || s == 'aborted' || s === 'succeeded';
 export const isFailedStatus = (s: TaskStatus): boolean => s === 'failed' || s == 'aborted';
@@ -53,22 +53,23 @@ export default class TaskStateStore {
   set(key: string, status: TaskStatus, output?: TaskResult): void {
     const current = this.store.get(key) || {};
     const metrics = this.metrics.get(key);
+    const now = Date.now();
     switch (status) {
       case 'pending':
-        this.store.set(key, { ...current, status: status });
+        this.store.set(key, { ...current, status: status, change: now });
         break;
       case 'started':
-        this.store.set(key, { ...current, status: status });
+        this.store.set(key, { ...current, status: status, change: now });
         this.metrics.set(key, { ...metrics, start: Date.now() });
         break;
       case 'succeeded':
       case 'failed':
         if (!metrics) throw new Error(`Missing metrics for '${key}'`);
-        this.store.set(key, { ...current, status: status, output });
+        this.store.set(key, { ...current, status: status, output, change: now });
         this.metrics.set(key, { ...metrics, end: Date.now(), elapsed: Date.now() - metrics.start });
         break;
       case 'aborted':
-        this.store.set(key, { ...current, status: status, output });
+        this.store.set(key, { ...current, status: status, output, change: now });
         break;
       default:
         throw new Error(`Can not set state for key '${key}', ${status} is an invalid status`);

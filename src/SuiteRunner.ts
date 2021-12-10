@@ -5,6 +5,8 @@ import TaskStateStore, { isEndStatus, isFailedStatus } from './TaskStateStore';
 import { IRenderer, TaskInput, TaskResult } from './types';
 import { Iterator } from './utils/Iterable';
 
+type TickFunction = (state: Readonly<TaskStateStore>) => void;
+
 const wait = async (timeout = 1000) =>
   new Promise((res) => {
     setTimeout(res, timeout);
@@ -15,14 +17,16 @@ export default class SuiteRunner {
   private state: TaskStateStore;
   private pool: Piscina;
   private renderer: IRenderer<any> | undefined;
+  private tickListeners: TickFunction[] = [];
 
-  constructor(suite: Suite, renderer?: IRenderer) {
+  constructor(suite: Suite, renderer?: IRenderer, onTick?: TickFunction) {
     this.suite = suite;
     this.renderer = renderer;
     this.state = new TaskStateStore(this.stateChange.bind(this));
     this.pool = new Piscina({
       filename: suite.actionsFilePath,
     });
+    if (onTick) this.tickListeners.push(onTick);
 
     const keys = [...this.suite.getAllNodeKeys()];
     if (!keys || !keys.length) throw new Error('Keys list must be specified');
@@ -79,7 +83,14 @@ export default class SuiteRunner {
     return allNodeStatuses.includes('pending') || allNodeStatuses.includes('started');
   }
 
-  private async _loop(opts: { dryrun?: boolean }) {
+  private async _tick() {
+    const state = this.getState();
+    for (const listener of this.tickListeners) {
+      listener(state);
+    }
+  }
+
+  private async _loop() {
     const canProcess = (node: Node): boolean => {
       const statuses = Iterator.map((p) => {
         const s = this.state.getState(p.key);
@@ -98,15 +109,21 @@ export default class SuiteRunner {
     }
 
     await wait(10);
+    await this._tick();
 
     if (this.hasPendingOrStarted()) {
-      await this._loop(opts);
+      await this._loop();
     }
+    await this._tick();
   }
 
-  async run(): Promise<Readonly<TaskStateStore>> {
+  async run({ dryRun }: { dryRun: boolean }): Promise<Readonly<TaskStateStore>> {
     this.suite.validate();
-    await this._loop({ dryrun: false });
+    if (dryRun) {
+      await this._tick();
+    } else {
+      await this._loop();
+    }
     return Object.freeze(this.state);
   }
 
@@ -114,12 +131,4 @@ export default class SuiteRunner {
     const allPendingKeys = this.state.getAllKeysByState({ state: 'pending' });
     allPendingKeys.forEach((key) => this.state.set(key, 'aborted'));
   }
-
-  // async plan(): Promise<string> {
-  //   this.suite.validate();
-
-  //   const dotGraph = this.suite.renderDot();
-
-  //   return dotGraph;
-  // }
 }

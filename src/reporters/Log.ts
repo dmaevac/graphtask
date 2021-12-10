@@ -12,7 +12,7 @@ export default class LogReporter implements IReporter<Node> {
     return this.filePath;
   }
 
-  async report(graph: Graph<Node>, state: Readonly<TaskStateStore>): Promise<string> {
+  async report(graph: Readonly<Graph<Node>>, state: Readonly<TaskStateStore>): Promise<string> {
     const lines = Iterator.map(
       (vertex) => {
         let line = '';
@@ -24,7 +24,7 @@ export default class LogReporter implements IReporter<Node> {
 
         const text = replaceUnicode(item.output);
 
-        line += `${Date.now()} ${key} (${[...parentKeys].join()}) ${vertex.value.name}`;
+        line += `${item.change} ${key} (${[...parentKeys].join()}) ${vertex.value.name}`;
 
         if (item.status !== 'pending') {
           line += `: [${item.status.toUpperCase()}]: ${text}`;

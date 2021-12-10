@@ -13,7 +13,7 @@ program
 program
   .option('-p, --plan', 'Run the plan without executing actions')
   .option('-r, --renderer <renderer>', 'Renderer to use', 'taskprogress')
-  .option('-o, --output <output>', 'File path and extension to write')
+  .option('-o, --output <output>', 'Folder to write output', './')
   .argument('<tasksDir>')
   .action(run);
 
